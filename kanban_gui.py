@@ -14,6 +14,12 @@ class KanbanBoard:
         self.db = Database("kanban.db")
         
         
+        self.dragged_task = None
+        self.drag_widget = None
+        self.drag_start_x = 0
+        self.drag_start_y = 0
+        
+        
         self.setup_ui()
         
         
@@ -93,6 +99,10 @@ class KanbanBoard:
                 'canvas': canvas,
                 'color': color
             }
+            
+            
+            scrollable_frame.bind("<ButtonRelease-1>", lambda e, s=status: self.on_drop(e, s))
+            canvas.bind("<ButtonRelease-1>", lambda e, s=status: self.on_drop(e, s))
     
     def show_add_task_dialog(self):
         """Show dialog to add a new task"""
@@ -173,9 +183,15 @@ class KanbanBoard:
             parent,
             bg="white",
             relief=tk.RAISED,
-            borderwidth=1
+            borderwidth=1,
+            cursor="hand2"
         )
         task_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        
+        task_frame.bind("<Button-1>", lambda e: self.on_drag_start(e, task, task_frame))
+        task_frame.bind("<B1-Motion>", self.on_drag_motion)
+        task_frame.bind("<ButtonRelease-1>", self.on_drag_release)
         
         
         title_label = tk.Label(
@@ -184,9 +200,13 @@ class KanbanBoard:
             font=("Arial", 10, "bold"),
             bg="white",
             anchor="w",
-            wraplength=250
+            wraplength=250,
+            cursor="hand2"
         )
         title_label.pack(fill=tk.X, padx=5, pady=(5, 0))
+        title_label.bind("<Button-1>", lambda e: self.on_drag_start(e, task, task_frame))
+        title_label.bind("<B1-Motion>", self.on_drag_motion)
+        title_label.bind("<ButtonRelease-1>", self.on_drag_release)
         
         
         if task['description']:
@@ -197,9 +217,13 @@ class KanbanBoard:
                 bg="white",
                 anchor="w",
                 wraplength=250,
-                fg="gray"
+                fg="gray",
+                cursor="hand2"
             )
             desc_label.pack(fill=tk.X, padx=5, pady=(2, 5))
+            desc_label.bind("<Button-1>", lambda e: self.on_drag_start(e, task, task_frame))
+            desc_label.bind("<B1-Motion>", self.on_drag_motion)
+            desc_label.bind("<ButtonRelease-1>", self.on_drag_release)
         
         
         id_label = tk.Label(
@@ -208,14 +232,265 @@ class KanbanBoard:
             font=("Arial", 8),
             bg="white",
             fg="lightgray",
-            anchor="w"
+            anchor="w",
+            cursor="hand2"
         )
-        id_label.pack(fill=tk.X, padx=5, pady=(0, 5))
+        id_label.pack(fill=tk.X, padx=5, pady=(0, 2))
+        id_label.bind("<Button-1>", lambda e: self.on_drag_start(e, task, task_frame))
+        id_label.bind("<B1-Motion>", self.on_drag_motion)
+        id_label.bind("<ButtonRelease-1>", self.on_drag_release)
+        
+        
+        buttons_frame = tk.Frame(task_frame, bg="white")
+        buttons_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+        
+        
+        edit_btn = tk.Button(
+            buttons_frame,
+            text="Edit",
+            command=lambda: self.show_edit_task_dialog(task),
+            font=("Arial", 8),
+            bg="#2196F3",
+            fg="white",
+            padx=5,
+            pady=2
+        )
+        edit_btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        
+        delete_btn = tk.Button(
+            buttons_frame,
+            text="Delete",
+            command=lambda: self.delete_task(task['id']),
+            font=("Arial", 8),
+            bg="#f44336",
+            fg="white",
+            padx=5,
+            pady=2
+        )
+        delete_btn.pack(side=tk.LEFT, padx=2)
+        
+        
+        current_status = task['status']
+        if current_status != "To Do":
+            move_todo_btn = tk.Button(
+                buttons_frame,
+                text="← To Do",
+                command=lambda: self.move_task(task['id'], "To Do"),
+                font=("Arial", 8),
+                bg="#ff9800",
+                fg="white",
+                padx=5,
+                pady=2
+            )
+            move_todo_btn.pack(side=tk.LEFT, padx=2)
+        
+        if current_status != "In Progress":
+            move_progress_btn = tk.Button(
+                buttons_frame,
+                text="↔ Progress",
+                command=lambda: self.move_task(task['id'], "In Progress"),
+                font=("Arial", 8),
+                bg="#ff9800",
+                fg="white",
+                padx=5,
+                pady=2
+            )
+            move_progress_btn.pack(side=tk.LEFT, padx=2)
+        
+        if current_status != "Done":
+            move_done_btn = tk.Button(
+                buttons_frame,
+                text="Done →",
+                command=lambda: self.move_task(task['id'], "Done"),
+                font=("Arial", 8),
+                bg="#ff9800",
+                fg="white",
+                padx=5,
+                pady=2
+            )
+            move_done_btn.pack(side=tk.LEFT, padx=2)
     
     def refresh_all_columns(self):
         """Refresh all columns"""
         for status in ["To Do", "In Progress", "Done"]:
             self.refresh_column(status)
+    
+    def show_edit_task_dialog(self, task):
+        """Show dialog to edit an existing task"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Edit Task")
+        dialog.geometry("400x300")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        
+        tk.Label(dialog, text="Task Title:", font=("Arial", 10)).pack(pady=(10, 0))
+        title_entry = tk.Entry(dialog, font=("Arial", 10), width=40)
+        title_entry.insert(0, task['title'])
+        title_entry.pack(pady=5)
+        title_entry.focus()
+        
+        
+        tk.Label(dialog, text="Description:", font=("Arial", 10)).pack(pady=(10, 0))
+        desc_text = tk.Text(dialog, font=("Arial", 10), width=40, height=5)
+        desc_text.insert("1.0", task['description'])
+        desc_text.pack(pady=5)
+        
+        
+        tk.Label(dialog, text="Status:", font=("Arial", 10)).pack(pady=(10, 0))
+        status_var = tk.StringVar(value=task['status'])
+        status_frame = tk.Frame(dialog)
+        status_frame.pack(pady=5)
+        
+        for status in ["To Do", "In Progress", "Done"]:
+            tk.Radiobutton(
+                status_frame,
+                text=status,
+                variable=status_var,
+                value=status,
+                font=("Arial", 9)
+            ).pack(side=tk.LEFT, padx=5)
+        
+        
+        button_frame = tk.Frame(dialog)
+        button_frame.pack(pady=10)
+        
+        def save_changes():
+            title = title_entry.get().strip()
+            description = desc_text.get("1.0", tk.END).strip()
+            status = status_var.get()
+            
+            if not title:
+                messagebox.showerror("Error", "Task title cannot be empty!")
+                return
+            
+            try:
+                self.db.update_task(task['id'], title=title, description=description, status=status)
+                self.refresh_all_columns()
+                dialog.destroy()
+                messagebox.showinfo("Success", "Task updated successfully!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to update task: {str(e)}")
+        
+        tk.Button(
+            button_frame,
+            text="Save Changes",
+            command=save_changes,
+            bg="#4CAF50",
+            fg="white",
+            padx=20
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(
+            button_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            padx=20
+        ).pack(side=tk.LEFT, padx=5)
+        
+        
+        dialog.bind('<Return>', lambda e: save_changes())
+    
+    def delete_task(self, task_id):
+        """Delete a task after confirmation"""
+        result = messagebox.askyesno(
+            "Confirm Delete",
+            "Are you sure you want to delete this task?",
+            icon='warning'
+        )
+        
+        if result:
+            try:
+                self.db.delete_task(task_id)
+                self.refresh_all_columns()
+                messagebox.showinfo("Success", "Task deleted successfully!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to delete task: {str(e)}")
+    
+    def move_task(self, task_id, new_status):
+        """Move a task to a different column"""
+        try:
+            self.db.update_task(task_id, status=new_status)
+            self.refresh_all_columns()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to move task: {str(e)}")
+    
+    def on_drag_start(self, event, task, widget):
+        """Start dragging a task"""
+        self.dragged_task = task
+        self.drag_widget = widget
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+        
+        
+        widget.config(relief=tk.SUNKEN, bg="#e0e0e0")
+    
+    def on_drag_motion(self, event):
+        """Handle drag motion"""
+        if self.drag_widget and self.dragged_task:
+            
+            self.drag_widget.config(cursor="fleur")
+    
+    def on_drag_release(self, event):
+        """Handle drag release"""
+        if not self.dragged_task or not self.drag_widget:
+            return
+        
+        
+        self.drag_widget.config(relief=tk.RAISED, bg="white", cursor="hand2")
+        
+        
+        x = event.x_root
+        y = event.y_root
+        
+        
+        target_status = None
+        for status, column_data in self.columns.items():
+            frame = column_data['frame']
+            canvas = column_data['canvas']
+            
+            
+            frame_x = frame.winfo_rootx()
+            frame_y = frame.winfo_rooty()
+            frame_width = frame.winfo_width()
+            frame_height = frame.winfo_height()
+            
+            
+            canvas_x = canvas.winfo_rootx()
+            canvas_y = canvas.winfo_rooty()
+            canvas_width = canvas.winfo_width()
+            canvas_height = canvas.winfo_height()
+            
+            
+            if (canvas_x <= x <= canvas_x + canvas_width and 
+                canvas_y <= y <= canvas_y + canvas_height):
+                target_status = status
+                break
+        
+        
+        if target_status and target_status != self.dragged_task['status']:
+            try:
+                self.db.update_task(self.dragged_task['id'], status=target_status)
+                self.refresh_all_columns()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to move task: {str(e)}")
+        
+        
+        self.dragged_task = None
+        self.drag_widget = None
+    
+    def on_drop(self, event, status):
+        """Handle drop on column"""
+        if self.dragged_task and self.dragged_task['status'] != status:
+            try:
+                self.db.update_task(self.dragged_task['id'], status=status)
+                self.refresh_all_columns()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to move task: {str(e)}")
+        
+        self.dragged_task = None
+        self.drag_widget = None
     
     def on_closing(self):
         """Handle window close event"""
