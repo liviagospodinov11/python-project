@@ -20,11 +20,6 @@ class KanbanBoard:
             root.destroy()
             return
         
-        self.dragged_task = None
-        self.drag_widget = None
-        self.drag_start_x = 0
-        self.drag_start_y = 0
-        
         self.prefs = Preferences()
         saved_prefs = self.prefs.load()
         
@@ -153,8 +148,7 @@ class KanbanBoard:
                 'color': color
             }
             
-            scrollable_frame.bind("<ButtonRelease-1>", lambda e, s=status: self.on_drop(e, s))
-            canvas.bind("<ButtonRelease-1>", lambda e, s=status: self.on_drop(e, s))
+
     
     def show_add_task_dialog(self):
         dialog = tk.Toplevel(self.root)
@@ -241,14 +235,9 @@ class KanbanBoard:
             parent,
             bg="white",
             relief=tk.RAISED,
-            borderwidth=1,
-            cursor="hand2"
+            borderwidth=1
         )
         task_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        task_frame.bind("<Button-1>", lambda e: self.on_drag_start(e, task, task_frame))
-        task_frame.bind("<B1-Motion>", self.on_drag_motion)
-        task_frame.bind("<ButtonRelease-1>", self.on_drag_release)
         
         title_label = tk.Label(
             task_frame,
@@ -256,13 +245,9 @@ class KanbanBoard:
             font=("Arial", 10, "bold"),
             bg="white",
             anchor="w",
-            wraplength=250,
-            cursor="hand2"
+            wraplength=250
         )
         title_label.pack(fill=tk.X, padx=5, pady=(5, 0))
-        title_label.bind("<Button-1>", lambda e: self.on_drag_start(e, task, task_frame))
-        title_label.bind("<B1-Motion>", self.on_drag_motion)
-        title_label.bind("<ButtonRelease-1>", self.on_drag_release)
         
         if task['description']:
             desc_label = tk.Label(
@@ -272,13 +257,9 @@ class KanbanBoard:
                 bg="white",
                 anchor="w",
                 wraplength=250,
-                fg="gray",
-                cursor="hand2"
+                fg="gray"
             )
             desc_label.pack(fill=tk.X, padx=5, pady=(2, 5))
-            desc_label.bind("<Button-1>", lambda e: self.on_drag_start(e, task, task_frame))
-            desc_label.bind("<B1-Motion>", self.on_drag_motion)
-            desc_label.bind("<ButtonRelease-1>", self.on_drag_release)
         
         id_label = tk.Label(
             task_frame,
@@ -286,13 +267,9 @@ class KanbanBoard:
             font=("Arial", 8),
             bg="white",
             fg="lightgray",
-            anchor="w",
-            cursor="hand2"
+            anchor="w"
         )
         id_label.pack(fill=tk.X, padx=5, pady=(0, 2))
-        id_label.bind("<Button-1>", lambda e: self.on_drag_start(e, task, task_frame))
-        id_label.bind("<B1-Motion>", self.on_drag_motion)
-        id_label.bind("<ButtonRelease-1>", self.on_drag_release)
         
         buttons_frame = tk.Frame(task_frame, bg="white")
         buttons_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -456,67 +433,6 @@ class KanbanBoard:
             self.refresh_all_columns()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to move task: {str(e)}")
-    
-    def on_drag_start(self, event, task, widget):
-        self.dragged_task = task
-        self.drag_widget = widget
-        self.drag_start_x = event.x
-        self.drag_start_y = event.y
-        widget.config(relief=tk.SUNKEN, bg="#e0e0e0")
-    
-    def on_drag_motion(self, event):
-        if self.drag_widget and self.dragged_task:
-            self.drag_widget.config(cursor="fleur")
-    
-    def on_drag_release(self, event):
-        if not self.dragged_task or not self.drag_widget:
-            return
-        
-        self.drag_widget.config(relief=tk.RAISED, bg="white", cursor="hand2")
-        
-        x = event.x_root
-        y = event.y_root
-        
-        target_status = None
-        for status, column_data in self.columns.items():
-            frame = column_data['frame']
-            canvas = column_data['canvas']
-            
-            frame_x = frame.winfo_rootx()
-            frame_y = frame.winfo_rooty()
-            frame_width = frame.winfo_width()
-            frame_height = frame.winfo_height()
-            
-            canvas_x = canvas.winfo_rootx()
-            canvas_y = canvas.winfo_rooty()
-            canvas_width = canvas.winfo_width()
-            canvas_height = canvas.winfo_height()
-            
-            if (canvas_x <= x <= canvas_x + canvas_width and 
-                canvas_y <= y <= canvas_y + canvas_height):
-                target_status = status
-                break
-        
-        if target_status and target_status != self.dragged_task['status']:
-            try:
-                self.db.update_task(self.dragged_task['id'], status=target_status)
-                self.refresh_all_columns()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to move task: {str(e)}")
-        
-        self.dragged_task = None
-        self.drag_widget = None
-    
-    def on_drop(self, event, status):
-        if self.dragged_task and self.dragged_task['status'] != status:
-            try:
-                self.db.update_task(self.dragged_task['id'], status=status)
-                self.refresh_all_columns()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to move task: {str(e)}")
-        
-        self.dragged_task = None
-        self.drag_widget = None
     
     def apply_filters(self):
         try:
